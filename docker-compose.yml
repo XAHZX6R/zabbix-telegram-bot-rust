@@ -1,0 +1,92 @@
+version: '3.8'
+services:
+  # --- Zabbix stack ---
+  zbx-db:
+    image: postgres:15
+    container_name: zbx-db
+    restart: always
+    environment:
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix
+      POSTGRES_DB: zabbix
+    volumes:
+      - zbx-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zabbix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-6.4-latest
+    container_name: zabbix-server
+    restart: always
+    environment:
+      DB_SERVER_HOST: zbx-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix
+      POSTGRES_DB: zabbix
+    depends_on:
+      zbx-db:
+        condition: service_healthy
+    ports:
+      - "10051:10051"  # Zabbix trapper/agent active (optional)
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-6.4-latest
+    container_name: zabbix-web
+    restart: always
+    environment:
+      ZBX_SERVER_HOST: zabbix-server
+      DB_SERVER_HOST: zbx-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: zabbix
+      POSTGRES_DB: zabbix
+      PHP_TZ: Europe/Moscow
+    depends_on:
+      - zabbix-server
+    ports:
+      - "8081:8080"   # Zabbix UI (host:8081)
+
+  # --- Our Rust bot ---
+  zabbix-tg:
+    build: .
+    image: zabbix-tg:latest
+    container_name: zabbix-tg
+    hostname: zabbix-tg
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "10"
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ALLOWED_USERS_PATH=/bot/allowed_users.txt
+      - RUST_LOG=info
+    volumes:
+      - /docker_sys/zabbix_tg:/bot:ro
+    dns:
+      - 8.8.8.8
+    command: ["/usr/local/bin/zabbixbot"]
+
+  zbx-setup:
+    image: zabbix-tg:latest
+    container_name: zbx-setup
+    # one-off run to configure Zabbix via API
+    environment:
+      - RUST_LOG=info
+      - RUN_MODE=zbx-setup
+      - ZBX_API_URL=${ZBX_API_URL:-http://zabbix-web:8080/api_jsonrpc.php}
+      - ZBX_USER=${ZBX_USER:-Admin}
+      - ZBX_PASSWORD=${ZBX_PASSWORD:-zabbix}
+      - ZBX_USER_ALIAS=${ZBX_USER_ALIAS:-Admin}
+      - ZBX_CHAT_ID=${ZBX_CHAT_ID}
+      - ZBX_ACTION_NAME=${ZBX_ACTION_NAME:-Send Telegram alerts}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    depends_on:
+      - zabbix-web
+    command: ["/usr/local/bin/zabbixbot"]
+
+volumes:
+  zbx-db-data:

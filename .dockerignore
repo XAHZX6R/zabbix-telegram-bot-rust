@@ -1,0 +1,10 @@
+target/
+.git/
+.gitignore
+Dockerfile
+Dockerfile.*
+**/*.rs.bk
+.idea/
+.vscode/
+.env
+
