@@ -1,0 +1,24 @@
+
+version: '3.8'
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: reverse-proxy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "10"
+    volumes:
+      - /docker_sys/reverse-proxy/etc/nginx/ssl:/etc/nginx/ssl:ro
+      - /docker_sys/reverse-proxy/etc/nginx/conf.d:/etc/nginx/conf.d:ro
+      - /docker_sys/reverse-proxy/etc/letsencrypt:/etc/letsencrypt
+      - /docker_sys/reverse-proxy/var/lib/letsencrypt:/var/lib/letsencrypt
+      - /docker_sys/reverse-proxy/var/log/nginx:/var/log/nginx
+    # Using host network so nginx can proxy to the host-mapped Zabbix UI (localhost:8081)
+    network_mode: "host"
+    command: >
+      sh -c "apk update && apk add --no-cache certbot openssl && nginx -g 'daemon off;'"
+
+
